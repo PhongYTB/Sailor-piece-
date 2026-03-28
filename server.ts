@@ -20,6 +20,32 @@ async function startServer() {
     },
   });
 
+  // Helper function to fetch from Roblox with RoProxy fallback
+  async function fetchWithFallback(robloxUrl: string, options: any = {}) {
+    const proxyUrl = robloxUrl.replace("roblox.com", "roproxy.com");
+    
+    // Add standard headers to look more like a real browser
+    const headers = {
+      "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
+      "Accept": "application/json",
+      ...(options.headers || {})
+    };
+
+    try {
+      // Try direct Roblox first
+      console.log(`Attempting direct fetch: ${robloxUrl}`);
+      const response = await fetch(robloxUrl, { ...options, headers, timeout: 5000 });
+      if (response.ok) return response;
+      console.warn(`Direct fetch failed with status ${response.status}. Trying proxy...`);
+    } catch (error) {
+      console.warn(`Direct fetch error. Trying proxy...`);
+    }
+
+    // Fallback to RoProxy
+    console.log(`Attempting proxy fetch: ${proxyUrl}`);
+    return fetch(proxyUrl, { ...options, headers, timeout: 8000 });
+  }
+
   // Roblox API Proxy
   app.get("/api/roblox/search", async (req, res) => {
     const { username } = req.query;
@@ -28,9 +54,8 @@ async function startServer() {
     try {
       console.log(`Searching for Roblox user: ${username}`);
       
-      // Step 1: Try exact username lookup first (more reliable)
-      // Using RoProxy to bypass Roblox cloud blocks (Vercel/AWS)
-      const lookupResponse = await fetch("https://users.roproxy.com/v1/usernames/users", {
+      // Step 1: Try exact username lookup
+      const lookupResponse = await fetchWithFallback("https://users.roblox.com/v1/usernames/users", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -45,8 +70,8 @@ async function startServer() {
       if (lookupData.data && lookupData.data.length > 0) {
         user = lookupData.data[0];
       } else {
-        // Step 2: Fallback to keyword search if exact lookup fails
-        const searchResponse = await fetch(`https://users.roproxy.com/v1/users/search?keyword=${encodeURIComponent(username as string)}&limit=1`);
+        // Step 2: Fallback to keyword search
+        const searchResponse = await fetchWithFallback(`https://users.roblox.com/v1/users/search?keyword=${encodeURIComponent(username as string)}&limit=1`);
         const searchData = await searchResponse.json();
         if (searchData.data && searchData.data.length > 0) {
           user = searchData.data[0];
@@ -58,7 +83,7 @@ async function startServer() {
       }
 
       // Step 3: Get avatar thumbnail
-      const thumbnailResponse = await fetch(`https://thumbnails.roproxy.com/v1/users/avatar-headshot?userIds=${user.id}&size=150x150&format=Png&isCircular=false`);
+      const thumbnailResponse = await fetchWithFallback(`https://thumbnails.roblox.com/v1/users/avatar-headshot?userIds=${user.id}&size=150x150&format=Png&isCircular=false`);
       const thumbnailData = await thumbnailResponse.json();
 
       res.json({
