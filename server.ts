@@ -1,14 +1,29 @@
+import "dotenv/config";
 import express from "express";
 import path from "path";
+import { fileURLToPath } from "url";
 import { createServer as createViteServer } from "vite";
 import fetch from "node-fetch";
 import nodemailer from "nodemailer";
 
-async function startServer() {
-  const app = express();
-  const PORT = 3000;
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
+const app = express();
+const PORT = Number(process.env.PORT) || 3000;
+
+async function startServer() {
   app.use(express.json());
+
+  // Health check endpoint
+  app.get("/api/ping", (req, res) => {
+    res.json({ 
+      status: "ok", 
+      env: process.env.NODE_ENV, 
+      vercel: !!process.env.VERCEL,
+      timestamp: new Date().toISOString()
+    });
+  });
 
   // Email Transporter Configuration
   // Users must set these in their environment variables
@@ -22,7 +37,10 @@ async function startServer() {
 
   // Helper function to fetch from Roblox with RoProxy fallback
   async function fetchWithFallback(robloxUrl: string, options: any = {}) {
-    const proxyUrl = robloxUrl.replace("roblox.com", "roproxy.com");
+    const proxies = [
+      robloxUrl.replace("roblox.com", "roproxy.com"),
+      robloxUrl.replace("roblox.com", "rbxproxy.com")
+    ];
     
     // Add standard headers to look more like a real browser
     const headers = {
@@ -31,19 +49,39 @@ async function startServer() {
       ...(options.headers || {})
     };
 
-    try {
-      // Try direct Roblox first
-      console.log(`Attempting direct fetch: ${robloxUrl}`);
-      const response = await fetch(robloxUrl, { ...options, headers, timeout: 5000 });
-      if (response.ok) return response;
-      console.warn(`Direct fetch failed with status ${response.status}. Trying proxy...`);
-    } catch (error) {
-      console.warn(`Direct fetch error. Trying proxy...`);
+    // If we are in production (Vercel/Cloud), skip direct fetch to save time as it's likely blocked
+    const isProduction = process.env.NODE_ENV === "production" || process.env.VERCEL === "1";
+    
+    if (!isProduction) {
+      try {
+        console.log(`Attempting direct fetch: ${robloxUrl}`);
+        const response = await fetch(robloxUrl, { ...options, headers, timeout: 3000 });
+        if (response.ok) return response;
+        console.warn(`Direct fetch failed with status ${response.status}. Trying proxies...`);
+      } catch (error) {
+        console.warn(`Direct fetch error: ${error instanceof Error ? error.message : "Unknown error"}. Trying proxies...`);
+      }
+    } else {
+      console.log("Production environment detected. Skipping direct fetch to avoid Roblox cloud block.");
     }
 
-    // Fallback to RoProxy
-    console.log(`Attempting proxy fetch: ${proxyUrl}`);
-    return fetch(proxyUrl, { ...options, headers, timeout: 8000 });
+    // Try proxies in order
+    for (const proxyUrl of proxies) {
+      try {
+        console.log(`Attempting proxy fetch: ${proxyUrl}`);
+        const response = await fetch(proxyUrl, { ...options, headers, timeout: 5000 });
+        if (response.ok) {
+          console.log(`Successfully connected via ${proxyUrl}`);
+          return response;
+        }
+        const errorText = await response.text().catch(() => "No error body");
+        console.warn(`Proxy ${proxyUrl} failed with status ${response.status}: ${errorText}`);
+      } catch (error) {
+        console.warn(`Proxy ${proxyUrl} error: ${error instanceof Error ? error.message : "Unknown error"}`);
+      }
+    }
+
+    throw new Error("All connection attempts to Roblox API failed. The service might be down or rate-limited.");
   }
 
   // Roblox API Proxy
@@ -272,7 +310,7 @@ async function startServer() {
     }
   });
 
-  if (process.env.NODE_ENV !== "production") {
+  if (process.env.NODE_ENV !== "production" && !process.env.VERCEL) {
     const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: "spa",
@@ -286,9 +324,14 @@ async function startServer() {
     });
   }
 
-  app.listen(PORT, "0.0.0.0", () => {
-    console.log(`Server running on http://localhost:${PORT}`);
-  });
+  // Only listen if not running as a Vercel function
+  if (process.env.NODE_ENV !== "production" || !process.env.VERCEL) {
+    app.listen(PORT, "0.0.0.0", () => {
+      console.log(`Server running on http://localhost:${PORT}`);
+    });
+  }
 }
 
 startServer();
+
+export default app;

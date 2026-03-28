@@ -109,7 +109,7 @@ export default function App() {
     setError('');
     try {
       const res = await fetch(`/api/roblox/search?username=${encodeURIComponent(trimmedUsername)}`);
-      const data = await res.json();
+      const data = await res.json().catch(() => ({ error: 'Server returned invalid response' }));
       if (res.ok) {
         setRobloxUser(data);
       } else {
@@ -117,7 +117,8 @@ export default function App() {
         setRobloxUser(null);
       }
     } catch (err) {
-      setError('Failed to connect to Roblox search');
+      console.error("Search error:", err);
+      setError('Failed to connect to server. Please check your internet or try again later.');
     } finally {
       setIsSearching(false);
     }
