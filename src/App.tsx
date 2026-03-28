@@ -109,16 +109,24 @@ export default function App() {
     setError('');
     try {
       const res = await fetch(`/api/roblox/search?username=${encodeURIComponent(trimmedUsername)}`);
-      const data = await res.json().catch(() => ({ error: 'Server returned invalid response' }));
+      let data;
+      const contentType = res.headers.get("content-type");
+      if (contentType && contentType.includes("application/json")) {
+        data = await res.json();
+      } else {
+        const text = await res.text();
+        data = { error: `Lỗi máy chủ (${res.status}): ${text.substring(0, 100)}` };
+      }
+
       if (res.ok) {
         setRobloxUser(data);
       } else {
-        setError(data.error || 'Roblox user not found');
+        setError(data.error || 'Không tìm thấy người dùng Roblox');
         setRobloxUser(null);
       }
     } catch (err) {
       console.error("Search error:", err);
-      setError('Failed to connect to server. Please check your internet or try again later.');
+      setError('Không thể kết nối với máy chủ. Vui lòng kiểm tra internet hoặc thử lại sau.');
     } finally {
       setIsSearching(false);
     }
