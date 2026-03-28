@@ -29,7 +29,8 @@ async function startServer() {
       console.log(`Searching for Roblox user: ${username}`);
       
       // Step 1: Try exact username lookup first (more reliable)
-      const lookupResponse = await fetch("https://users.roblox.com/v1/usernames/users", {
+      // Using RoProxy to bypass Roblox cloud blocks (Vercel/AWS)
+      const lookupResponse = await fetch("https://users.roproxy.com/v1/usernames/users", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -45,7 +46,7 @@ async function startServer() {
         user = lookupData.data[0];
       } else {
         // Step 2: Fallback to keyword search if exact lookup fails
-        const searchResponse = await fetch(`https://users.roblox.com/v1/users/search?keyword=${encodeURIComponent(username as string)}&limit=1`);
+        const searchResponse = await fetch(`https://users.roproxy.com/v1/users/search?keyword=${encodeURIComponent(username as string)}&limit=1`);
         const searchData = await searchResponse.json();
         if (searchData.data && searchData.data.length > 0) {
           user = searchData.data[0];
@@ -57,7 +58,7 @@ async function startServer() {
       }
 
       // Step 3: Get avatar thumbnail
-      const thumbnailResponse = await fetch(`https://thumbnails.roblox.com/v1/users/avatar-headshot?userIds=${user.id}&size=150x150&format=Png&isCircular=false`);
+      const thumbnailResponse = await fetch(`https://thumbnails.roproxy.com/v1/users/avatar-headshot?userIds=${user.id}&size=150x150&format=Png&isCircular=false`);
       const thumbnailData = await thumbnailResponse.json();
 
       res.json({
